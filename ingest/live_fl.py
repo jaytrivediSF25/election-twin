@@ -1,6 +1,11 @@
 """Florida Division of Elections live results.
 
-Source: the DOS "Election Results Data Extract Utility":
+PRIMARY source (Florida Election Watch election-night file, live with zero votes since
+before polls; confirmed 2026-11-03):
+  https://flelectionfiles.floridados.gov/enightfilespublic/20261103_ElecResultsFL.txt
+  (2024 archive: .../20241105_ElecResultsFL.txt; also .xls and pipe-delimited variants)
+Same columns as the extract below except OfficeDesc -> RaceName, ElectionDate zero-padded.
+FALLBACK source, DOS "Election Results Data Extract Utility":
   GET  https://results.elections.myflorida.com/downloadresults.asp?ElectionDate=M/D/YYYY&DATAMODE=
        (HTML form; hidden fields ElectionDate, OfficialResults, PartyRaces, DataMode)
   POST https://results.elections.myflorida.com/ResultsExtract.Asp  -> tab-delimited file
@@ -26,6 +31,7 @@ from ingest import _live_common as C
 
 STATE = "FL"
 SITE = "https://results.elections.myflorida.com"
+ENIGHT = "https://flelectionfiles.floridados.gov/enightfilespublic/{ymd}_ElecResultsFL.txt"
 DATE_2026 = "11/3/2026"
 DATE_2024 = "11/5/2024"
 CACHE = C.RAW / "live_fl"
@@ -77,34 +83,63 @@ def parse(data: bytes, ts: datetime, source: str = SOURCE, include_zero: bool = 
     return C.finalize(long, source, ts, include_zero)
 
 
+class NotPublished(RuntimeError):
+    pass
+
+
+def _ymd(election_date: str) -> str:
+    m, d, y = (int(x) for x in election_date.split("/"))
+    return f"{y:04d}{m:02d}{d:02d}"
+
+
+def download_enight(election_date: str, refresh: bool = True) -> tuple[bytes, datetime]:
+    url = ENIGHT.format(ymd=_ymd(election_date))
+    try:
+        data, lm = C.fetch_bytes(url, CACHE / f"enight_{_ymd(election_date)}.txt", refresh=refresh)
+    except httpx.HTTPStatusError as e:
+        raise NotPublished(f"FL results not published yet: {url} -> HTTP {e.response.status_code}") from e
+    if b"ElectionDate\t" not in data[:300]:
+        raise NotPublished(f"FL results not published yet: {url} is not a results file: {data[:120]!r}")
+    return data, C.parse_http_date(lm) or C.utcnow()
+
+
 def download(election_date: str, refresh: bool = True) -> tuple[bytes, datetime]:
+    """Fallback: the DOS extract utility (results.elections.myflorida.com)."""
     cache = CACHE / f"extract_{election_date.replace('/', '-')}.txt"
     if cache.exists() and not refresh:
         return cache.read_bytes(), datetime.fromtimestamp(cache.stat().st_mtime)
     with httpx.Client(headers=C.UA, timeout=60, follow_redirects=True) as c:
         form = c.get(f"{SITE}/downloadresults.asp", params={"ElectionDate": election_date, "DATAMODE": ""})
-        form.raise_for_status()
+        if form.status_code >= 400:
+            raise NotPublished(f"FL results not published yet: DOS extract for {election_date} -> HTTP {form.status_code}")
         html = form.content.decode("latin-1")
         fields = dict(re.findall(r'NAME="(\w+)"\s+VALUE="([^"]*)"', html, re.I))
         if fields.get("ElectionDate") != election_date:
-            raise RuntimeError(f"FL DOS extract for {election_date} not published yet (form fields={fields})")
+            raise NotPublished(f"FL results not published yet: DOS extract for {election_date} (form fields={fields})")
         fields.setdefault("FormsButton2", "Download")
         r = c.post(f"{SITE}/ResultsExtract.Asp", data=fields)
         r.raise_for_status()
     if b"ElectionDate\t" not in r.content[:200]:
-        raise RuntimeError(f"FL DOS extract not a results file: {r.content[:200]!r}")
+        raise NotPublished(f"FL results not published yet: DOS extract not a results file: {r.content[:200]!r}")
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_bytes(r.content)
     return r.content, C.utcnow()
 
 
 def poll(election_date: str = DATE_2026, include_zero: bool = False) -> pl.DataFrame:
-    data, ts = download(election_date)
+    """Election Watch file first; DOS extract utility as fallback. Raises NotPublished."""
+    try:
+        data, ts = download_enight(election_date)
+    except (NotPublished, httpx.HTTPError) as e1:
+        try:
+            data, ts = download(election_date)
+        except (NotPublished, httpx.HTTPError) as e2:
+            raise NotPublished(f"FL results not published yet ({e1}; fallback: {e2})") from e2
     return parse(data, ts, include_zero=include_zero)
 
 
 def load_2024(refresh: bool = False) -> pl.DataFrame:
-    data, _ = download(DATE_2024, refresh=refresh)
+    data, _ = download_enight(DATE_2024, refresh=refresh)
     return parse(data, datetime(2024, 11, 20), source=f"{SOURCE}:2024")
 
 
@@ -114,14 +149,25 @@ def replay_2024(n_chunks: int = 10) -> Iterator[pl.DataFrame]:
 
 def county_district_from_extract(data: bytes) -> pl.DataFrame:
     """fips -> district weights from a FL extract's USR rows, weight = share of the county's
-    precincts in each district (DOS 'Precincts' column). Run on the 2026 extract tonight to get
-    the NEW (2026) map; uncontested districts don't appear on the ballot and are missing."""
-    df = read_extract(data).filter(pl.col("RaceCode") == "USR")
+    precincts in each district (DOS 'Precincts' column = precincts of that county in that
+    district), denominator = the county's total precincts (statewide-race rows). Uncontested
+    districts aren't on the ballot, so a county's weights can sum to < 1; the gap is the share
+    in uncontested districts. Precinct share is a crude population proxy."""
+    raw = read_extract(data)
+    tot = (raw.filter(pl.col("RaceCode").is_in(["GOV", "USS", "PRE"]))
+           .group_by("CountyName").agg(pl.col("Precincts").cast(pl.Int64, strict=False).max().alias("pt")))
+    df = raw.filter(pl.col("RaceCode") == "USR")
     df = (df.select("CountyName", pl.col("Juris1num").str.replace_all(r"\D", "").cast(pl.Int64).alias("d"),
-                    pl.col("Precincts").cast(pl.Int64, strict=False).alias("p")).unique(["CountyName", "d"]))
+                    pl.col("Precincts").cast(pl.Int64, strict=False).alias("p")).unique(["CountyName", "d"])
+          .join(tot, on="CountyName", how="left"))
     fmap = {c: C.to_fips(STATE, c) for c in df["CountyName"].unique().to_list()}
     return df.select(
         pl.col("CountyName").replace_strict(fmap).alias("fips"),
         pl.format("FL-{}", pl.col("d").cast(pl.Utf8).str.zfill(2)).alias("district_id"),
-        (pl.col("p") / pl.col("p").sum().over("CountyName")).alias("weight"),
+        pl.min_horizontal(pl.col("p") / pl.col("pt"), pl.lit(1.0)).alias("weight"),
     ).sort("fips", "district_id")
+
+
+def county_district_2026(refresh: bool = False) -> pl.DataFrame:
+    data, _ = download_enight(DATE_2026, refresh=refresh)
+    return county_district_from_extract(data)

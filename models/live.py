@@ -66,12 +66,17 @@ def race_projection(rows: pl.DataFrame, county: pl.DataFrame, by_method: pl.Data
     v = df["votes"].to_numpy().astype(float)
     race_swing = float((v * df["swing"].to_numpy()).sum() / v.sum())
 
+    state = df["state"].drop_nulls()[0]
+    if by_method is not None:
+        proj = _project_by_method(df, county, by_method, state, race_swing, cfg)
+        if proj is not None:
+            return proj
     per_c = (df.group_by("fips").agg(
         pl.col("votes").sum().alias("counted"),
         ((pl.col("dem") - pl.col("rep")).sum()).alias("net"),
         (pl.col("swing") * pl.col("votes")).sum().alias("sw_v"),
     ))
-    allc = county.filter(pl.col("state") == df["state"].drop_nulls()[0]).join(per_c, on="fips", how="left").with_columns(
+    allc = county.filter(pl.col("state") == state).join(per_c, on="fips", how="left").with_columns(
         pl.col("counted").fill_null(0), pl.col("net").fill_null(0), pl.col("sw_v").fill_null(0.0))
     k = cfg.shrink_votes
     allc = allc.with_columns(
@@ -82,6 +87,36 @@ def race_projection(rows: pl.DataFrame, county: pl.DataFrame, by_method: pl.Data
     total = float(allc["expected"].sum())
     counted = float(allc["counted"].sum())
     return {"projected": float(100 * net / total), "frac": min(0.99, counted / total) if total else 0.0,
+            "race_swing": race_swing, "counted": counted}
+
+
+def _project_by_method(df: pl.DataFrame, county: pl.DataFrame, by_method: pl.DataFrame, state: str,
+                       race_swing: float, cfg: LiveConfig) -> dict | None:
+    """Project remaining vote per (county, vote type): uncounted election-day vote is
+    projected at its own 2024 margin, not the county's blended margin."""
+    if df["vote_type"].eq("total").all():
+        return None
+    base = by_method.join(county.select("fips", "state"), on="fips").filter(pl.col("state") == state)
+    if base.is_empty():
+        return None
+    k = cfg.shrink_votes
+    sw_c = df.group_by("fips").agg((pl.col("swing") * pl.col("votes")).sum().alias("sw_v"),
+                                   pl.col("votes").sum().alias("cv"))
+    cnt = df.group_by("fips", "vote_type").agg(pl.col("votes").sum().alias("counted"),
+                                               (pl.col("dem") - pl.col("rep")).sum().alias("net"))
+    g = (base.join(cnt, on=["fips", "vote_type"], how="full", coalesce=True)
+         .join(sw_c, on="fips", how="left")
+         .with_columns(pl.col("counted").fill_null(0), pl.col("net").fill_null(0),
+                       pl.col("total").fill_null(0.0), pl.col("sw_v").fill_null(0.0), pl.col("cv").fill_null(0))
+         .with_columns(
+             ((pl.col("sw_v") + k * race_swing) / (pl.col("cv") + k)).alias("swing_hat"),
+             pl.max_horizontal(pl.col("total") * cfg.turnout_ratio, pl.col("counted") * 1.0).alias("expected"))
+         .with_columns((pl.col("expected") - pl.col("counted")).clip(0).alias("remaining")))
+    net = (g["net"] + g["remaining"] * (g["base_margin_vt"].fill_null(0.0) + g["swing_hat"]) / 100).sum()
+    total, counted = float(g["expected"].sum()), float(g["counted"].sum())
+    if total <= 0:
+        return None
+    return {"projected": float(100 * net / total), "frac": min(0.99, counted / total),
             "race_swing": race_swing, "counted": counted}
 
 

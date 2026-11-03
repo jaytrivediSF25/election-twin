@@ -1,0 +1,63 @@
+ElectionDate	PartyCode	PartyName	RaceCode	RaceName	CountyCode	CountyName	Juris1num	Juris2num	Precincts	PrecinctsReporting	CanNameLast	CanNameFirst	CanNameMiddle	CanVotes
+11/05/2024	REP	Republican Party	PRE	President and Vice President	ALA	Alachua	   	 	63	63	Vance	Trump	 / 	52939
+11/05/2024	REP	Republican Party	PRE	President and Vice President	DAD	Miami-Dade	   	 	714	714	Vance	Trump	 / 	605590
+11/05/2024	REP	Republican Party	PRE	President and Vice President	STJ	St. Johns	   	 	53	53	Vance	Trump	 / 	128759
+11/05/2024	DEM	Democratic Party	PRE	President and Vice President	ALA	Alachua	   	 	63	63	Walz	Harris	 / 	81578
+11/05/2024	DEM	Democratic Party	PRE	President and Vice President	DAD	Miami-Dade	   	 	714	714	Walz	Harris	 / 	480355
+11/05/2024	DEM	Democratic Party	PRE	President and Vice President	STJ	St. Johns	   	 	53	53	Walz	Harris	 / 	66862
+11/05/2024	LPF	Libertarian Party	PRE	President and Vice President	ALA	Alachua	   	 	63	63	ter Maat	Oliver	 / 	619
+11/05/2024	LPF	Libertarian Party	PRE	President and Vice President	DAD	Miami-Dade	   	 	714	714	ter Maat	Oliver	 / 	2096
+11/05/2024	LPF	Libertarian Party	PRE	President and Vice President	STJ	St. Johns	   	 	53	53	ter Maat	Oliver	 / 	748
+11/05/2024	PSL	Party for Socialism and Liberation	PRE	President and Vice President	ALA	Alachua	   	 	63	63	Garcia	De la Cruz	 / 	293
+11/05/2024	PSL	Party for Socialism and Liberation	PRE	President and Vice President	DAD	Miami-Dade	   	 	714	714	Garcia	De la Cruz	 / 	1308
+11/05/2024	PSL	Party for Socialism and Liberation	PRE	President and Vice President	STJ	St. Johns	   	 	53	53	Garcia	De la Cruz	 / 	148
+11/05/2024	CPF	Constitution Party	PRE	President and Vice President	ALA	Alachua	   	 	63	63	Broden	Terry	 / 	82
+11/05/2024	CPF	Constitution Party	PRE	President and Vice President	DAD	Miami-Dade	   	 	714	714	Broden	Terry	 / 	476
+11/05/2024	CPF	Constitution Party	PRE	President and Vice President	STJ	St. Johns	   	 	53	53	Broden	Terry	 / 	76
+11/05/2024	ASP	American Solidarity Party of Florida 	PRE	President and Vice President	ALA	Alachua	   	 	63	63	Onak	Sonski	 / 	150
+11/05/2024	ASP	American Solidarity Party of Florida 	PRE	President and Vice President	DAD	Miami-Dade	   	 	714	714	Onak	Sonski	 / 	455
+11/05/2024	ASP	American Solidarity Party of Florida 	PRE	President and Vice President	STJ	St. Johns	   	 	53	53	Onak	Sonski	 / 	145
+11/05/2024	GRE	Green Party	PRE	President and Vice President	ALA	Alachua	   	 	63	63	Ware	Stein	 / 	887
+11/05/2024	GRE	Green Party	PRE	President and Vice President	DAD	Miami-Dade	   	 	714	714	Ware	Stein	 / 	3813
+11/05/2024	GRE	Green Party	PRE	President and Vice President	STJ	St. Johns	   	 	53	53	Ware	Stein	 / 	714
+11/05/2024	WRI	Write-in	PRE	President and Vice President	ALA	Alachua	   	 	63	63	Ellis	Ayyadurai	 / 	0
+11/05/2024	WRI	Write-in	PRE	President and Vice President	DAD	Miami-Dade	   	 	714	714	Ellis	Ayyadurai	 / 	12
+11/05/2024	WRI	Write-in	PRE	President and Vice President	STJ	St. Johns	   	 	53	53	Ellis	Ayyadurai	 / 	5
+11/05/2024	WRI	Write-in	PRE	President and Vice President	ALA	Alachua	   	 	63	63	McVay	Fox	 / 	0
+11/05/2024	WRI	Write-in	PRE	President and Vice President	DAD	Miami-Dade	   	 	714	714	McVay	Fox	 / 	0
+11/05/2024	WRI	Write-in	PRE	President and Vice President	STJ	St. Johns	   	 	53	53	McVay	Fox	 / 	0
+11/05/2024	REP	Republican Party	USS	United States Senator	ALA	Alachua	   	 	63	63	Scott	Rick		54458
+11/05/2024	REP	Republican Party	USS	United States Senator	DAD	Miami-Dade	   	 	714	714	Scott	Rick		585445
+11/05/2024	REP	Republican Party	USS	United States Senator	STJ	St. Johns	   	 	53	53	Scott	Rick		128463
+11/05/2024	DEM	Democratic Party	USS	United States Senator	ALA	Alachua	   	 	63	63	Mucarsel-Powell	Debbie		78314
+11/05/2024	DEM	Democratic Party	USS	United States Senator	DAD	Miami-Dade	   	 	714	714	Mucarsel-Powell	Debbie		477598
+11/05/2024	DEM	Democratic Party	USS	United States Senator	STJ	St. Johns	   	 	53	53	Mucarsel-Powell	Debbie		64516
+11/05/2024	LPF	Libertarian Party	USS	United States Senator	ALA	Alachua	   	 	63	63	Bonoan	Feena		902
+11/05/2024	LPF	Libertarian Party	USS	United States Senator	DAD	Miami-Dade	   	 	714	714	Bonoan	Feena		4737
+11/05/2024	LPF	Libertarian Party	USS	United States Senator	STJ	St. Johns	   	 	53	53	Bonoan	Feena		995
+11/05/2024	NPA	No Party Affiliation	USS	United States Senator	ALA	Alachua	   	 	63	63	Nguyen	Tuan	TQ	886
+11/05/2024	NPA	No Party Affiliation	USS	United States Senator	DAD	Miami-Dade	   	 	714	714	Nguyen	Tuan	TQ	4088
+11/05/2024	NPA	No Party Affiliation	USS	United States Senator	STJ	St. Johns	   	 	53	53	Nguyen	Tuan	TQ	772
+11/05/2024	NPA	No Party Affiliation	USS	United States Senator	ALA	Alachua	   	 	63	63	Everidge	Ben		648
+11/05/2024	NPA	No Party Affiliation	USS	United States Senator	DAD	Miami-Dade	   	 	714	714	Everidge	Ben		4244
+11/05/2024	NPA	No Party Affiliation	USS	United States Senator	STJ	St. Johns	   	 	53	53	Everidge	Ben		885
+11/05/2024	WRI	Write-in	USS	United States Senator	ALA	Alachua	   	 	63	63	Knepper	Howard		0
+11/05/2024	WRI	Write-in	USS	United States Senator	DAD	Miami-Dade	   	 	714	714	Knepper	Howard		2
+11/05/2024	WRI	Write-in	USS	United States Senator	STJ	St. Johns	   	 	53	53	Knepper	Howard		0
+11/05/2024	REP	Republican Party	USR	Representative in Congress, District 3	ALA	Alachua	003	 	63	63	Cammack	Kat		54872
+11/05/2024	DEM	Democratic Party	USR	Representative in Congress, District 3	ALA	Alachua	003	 	63	63	Wells	Tom		78904
+11/05/2024	REP	Republican Party	USR	Representative in Congress, District 5	STJ	St. Johns	005	 	47	47	Rutherford	John	H.	112885
+11/05/2024	DEM	Democratic Party	USR	Representative in Congress, District 5	STJ	St. Johns	005	 	47	47	McGovern	Jay		52872
+11/05/2024	WRI	Write-in	USR	Representative in Congress, District 5	STJ	St. Johns	005	 	47	47	Koniz	Gary	L.	8
+11/05/2024	REP	Republican Party	USR	Representative in Congress, District 6	STJ	St. Johns	006	 	11	11	Waltz	Michael		18275
+11/05/2024	DEM	Democratic Party	USR	Representative in Congress, District 6	STJ	St. Johns	006	 	11	11	Stockton	James	David	8596
+11/05/2024	WRI	Write-in	USR	Representative in Congress, District 6	STJ	St. Johns	006	 	11	11	Dembinsky	Richard	Paul	1
+11/05/2024	REP	Republican Party	USR	Representative in Congress, District 24	DAD	Miami-Dade	024	 	204	204	Navarro	Jesus	Gabriel	84231
+11/05/2024	DEM	Democratic Party	USR	Representative in Congress, District 24	DAD	Miami-Dade	024	 	204	204	Wilson	Frederica		170692
+11/05/2024	WRI	Write-in	USR	Representative in Congress, District 24	DAD	Miami-Dade	024	 	204	204	Spicer	Lavern		19
+11/05/2024	REP	Republican Party	USR	Representative in Congress, District 26	DAD	Miami-Dade	026	 	129	129	Diaz-Balart	Mario		138467
+11/05/2024	DEM	Democratic Party	USR	Representative in Congress, District 26	DAD	Miami-Dade	026	 	129	129	Atkins	Joey		56161
+11/05/2024	REP	Republican Party	USR	Representative in Congress, District 27	DAD	Miami-Dade	027	 	211	211	Salazar	Maria	Elvira	199159
+11/05/2024	DEM	Democratic Party	USR	Representative in Congress, District 27	DAD	Miami-Dade	027	 	211	211	BÃ¡ez-Geller	Lucia	 	130708
+11/05/2024	REP	Republican Party	USR	Representative in Congress, District 28	DAD	Miami-Dade	028	 	173	173	Gimenez	Carlos	A.	183428
+11/05/2024	DEM	Democratic Party	USR	Representative in Congress, District 28	DAD	Miami-Dade	028	 	173	173	Ehr	Phil		98853

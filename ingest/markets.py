@@ -33,8 +33,8 @@ SOURCES = {
     "kalshi_markets": f"{KALSHI}/events?series_ticker=<series>&status=open&with_nested_markets=true",
     "polymarket_markets": f"{GAMMA}/events?tag_slug=midterms&closed=false",
 }
-KALSHI_WORKERS = 4      # Kalshi basic tier rate-limits reads; keep this small
-KALSHI_PACE = 0.1       # seconds between page requests per worker
+KALSHI_WORKERS = 3      # Kalshi basic tier rate-limits reads; keep this small
+KALSHI_PACE = 0.2       # seconds between page requests per worker
 log = logging.getLogger(__name__)
 RAW_DIR = Path(__file__).resolve().parent.parent / "data" / "raw" / "markets"
 
@@ -297,6 +297,12 @@ def _fetch_kalshi(c: httpx.Client) -> pl.DataFrame:
     failed: list[str] = []
     with ThreadPoolExecutor(KALSHI_WORKERS) as ex:
         rows = [r for rs in ex.map(safe, series) for r in rs]
+    if failed:  # second pass, sequential, after the rate-limit window cools off
+        retry, failed[:] = list(failed), []
+        log.warning("markets: retrying %d kalshi series sequentially", len(retry))
+        time.sleep(3)
+        for st in retry:
+            rows += safe(st)
     if failed:
         log.error("markets: %d kalshi series failed: %s", len(failed), failed)
     return pl.DataFrame(rows, schema=_RAW_SCHEMA)
