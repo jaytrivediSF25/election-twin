@@ -20,6 +20,10 @@ PRES24_NATIONAL = -1.48            # Trump +1.48 national popular vote margin
 RATING_MARGIN = {"Safe D": 20.0, "Likely D": 9.0, "Lean D": 4.0, "Tossup": 0.0,
                  "Lean R": -4.0, "Likely R": -9.0, "Safe R": -20.0}
 RATING_WEIGHT = 0.4                # pull of non-safe ratings on fundamentals
+# Ratings encode candidate effects that uniform swing can't see (e.g. a popular R governor in a
+# D+30 state), so the fundamental is first clamped into the rating's margin band.
+RATING_BAND = {"Safe D": (10.0, 99.0), "Likely D": (5.0, 15.0), "Lean D": (1.0, 8.0), "Tossup": (-3.0, 3.0),
+               "Lean R": (-8.0, -1.0), "Likely R": (-15.0, -5.0), "Safe R": (-99.0, -10.0)}
 INCUMBENCY = {"house": 2.5, "senate": 2.0, "governor": 2.0}
 SD_RACE = {"house": 5.0, "senate": 5.5, "governor": 5.5}   # unpolled
 SD_RACE_POLLED = (3.5, 4.5)        # (>=3 polls, 1-2 polls)
@@ -102,11 +106,11 @@ def build_inputs(con, cfg: ModelConfig | None = None) -> tuple[pl.DataFrame, dic
         inc = {"D": 1, "R": -1}.get(r["incumbent_party"], 0) if not r["open_seat"] else 0
         fundamental = base + swing + inc * INCUMBENCY[ch]
         rating = r["rating"]
-        if rating in ("Safe D", "Safe R"):
-            bound = 10.0 * (1 if rating == "Safe D" else -1)
-            fundamental = max(fundamental, bound) if bound > 0 else min(fundamental, bound)
-        elif rating in RATING_MARGIN:
-            fundamental = (1 - RATING_WEIGHT) * fundamental + RATING_WEIGHT * RATING_MARGIN[rating]
+        if rating in RATING_BAND:
+            lo, hi = RATING_BAND[rating]
+            fundamental = min(max(fundamental, lo), hi)
+            if rating not in ("Safe D", "Safe R"):
+                fundamental = (1 - RATING_WEIGHT) * fundamental + RATING_WEIGHT * RATING_MARGIN[rating]
         poll, n_polls = race_polls(con, r["race_id"])
         if poll is not None and n_polls > 0:
             w = min(0.85, n_polls / (n_polls + 1.5))

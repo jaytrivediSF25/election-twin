@@ -69,7 +69,7 @@ def test_no_polls_collapses_to_uniform_swing(con):
     inputs, meta = pregame.build_inputs(con)
     row = inputs.filter(pl.col("race_id") == "HOUSE-ZZ-01").row(0, named=True)
     assert meta["swing"] == pytest.approx(5.0)
-    assert row["mean"] == pytest.approx(0.6 * 5.0)          # tossup rating pulls 40% toward 0
+    assert row["mean"] == pytest.approx(0.6 * 3.0)          # clamped to tossup band, then 40% toward 0
     sen = inputs.filter(pl.col("race_id") == "SEN-ZZ").row(0, named=True)
     assert sen["fundamental"] == pytest.approx(0.6 * (-4.0 + 5.0))  # state pres from counties
 
