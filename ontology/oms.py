@@ -2,6 +2,7 @@
 tables and the merged_* views (source rows overlaid with latest edits)."""
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -10,7 +11,7 @@ import duckdb
 import yaml
 
 SCHEMA_PATH = Path(__file__).with_name("schema.yaml")
-DEFAULT_DB = Path(__file__).resolve().parent.parent / "data" / "twin.duckdb"
+DEFAULT_DB = Path(os.environ.get("TWIN_DB") or Path(__file__).resolve().parent.parent / "data" / "twin.duckdb")
 
 
 @dataclass(frozen=True)
@@ -150,3 +151,8 @@ def one(con, sql: str, params: list | None = None):
     """First row or None. DuckDB 2.0 requires results be fully consumed before reuse."""
     rows = con.execute(sql, params or []).fetchall()
     return rows[0] if rows else None
+
+
+import warnings  # noqa: E402
+
+warnings.filterwarnings("ignore", message="Arrow output on a DB-API result")

@@ -182,8 +182,9 @@ def fetch(refresh: bool = False) -> dict[str, pl.DataFrame]:
         if h.startswith("Special elections during") or h.startswith("Elections leading to"):
             for r in _grid(t)[2:]:
                 if len(r) >= 7 and _clean(r[0]):
+                    # specials: ..., history, status, candidates ; regular: ..., history, last race, status, candidates
                     inc_rows.append({"label": _clean(r[0]), "senator": _clean(r[2]), "party": _clean(r[3]),
-                                     "status": _clean(r[5]), "candidates": r[6].replace("\xa0", " "),
+                                     "status": _clean(r[-2]), "candidates": r[-1].replace("\xa0", " "),
                                      "special": h.startswith("Special")})
     raw["senate_incumbents"] = pl.DataFrame(inc_rows)
     seats = next(t for h, t in sen if h == "Seats")
@@ -295,7 +296,10 @@ _RUNNING = re.compile(r"(?i)^(incumbent (renominated|running|advanced|re-?nomina
 
 
 def _is_open(status: str) -> bool:
-    return not _RUNNING.match(status or "")
+    status = status or ""
+    if re.search(r"(?i)withdrew|withdrawn", status):
+        return True
+    return not (_RUNNING.match(status) or re.match(r"(?i)^incumbent re-?elected", status))
 
 
 def _party(p: str) -> str | None:
@@ -367,12 +371,28 @@ def to_objects(raw: dict[str, pl.DataFrame]) -> dict[str, pl.DataFrame]:
     races, cands = [], []
     meta = {"rating_source": {}, "derived": []}
 
-    def add_cands(race_id: str, cell: str, incumbent_name: str | None, keep_independent_d_side: bool):
+    def add_cands(race_id: str, cell: str, incumbent_names: list[str], statewide: bool):
+        """D/R nominees. Statewide: one per side (top-4/top-two states list several; prefer the
+        incumbent, else first listed) and, if no Democrat, the first independent as the D side."""
         parsed = [(n, _party(p) or p) for n, p in _parse_candidates(cell)]
+        names = [x for x in incumbent_names if x]
+
+        def inc_score(n: str) -> int:
+            if any(_clean(n).lower() == _clean(x).lower() for x in names):
+                return 2
+            return 1 if any(_same_person(n, x) for x in names) else 0
+
         majors = [(n, p) for n, p in parsed if p in ("D", "R")]
-        if keep_independent_d_side and not any(p == "D" for _, p in majors):
-            ind = [(n, p) for n, p in parsed if p == "I"]
-            majors += ind[:1]
+        if statewide:
+            if not any(p == "D" for _, p in majors):
+                majors += [(n, p) for n, p in parsed if p == "I"][:1]
+            best: dict[str, tuple[str, str]] = {}
+            for n, p in majors:
+                side = "D" if p == "I" else p
+                if side not in best or inc_score(n) > inc_score(best[side][0]):
+                    best[side] = (n, p)
+            majors = list(best.values())
+        top = max((inc_score(n) for n, _ in majors), default=0)
         seen = set()
         for n, p in majors:
             cid = f"{race_id}:{_slug(n)}"
@@ -380,7 +400,7 @@ def to_objects(raw: dict[str, pl.DataFrame]) -> dict[str, pl.DataFrame]:
                 continue
             seen.add(cid)
             cands.append({"candidate_id": cid, "race_id": race_id, "name": n, "party": p,
-                          "incumbent": bool(incumbent_name) and _same_person(n, incumbent_name)})
+                          "incumbent": top > 0 and inc_score(n) == top})
 
     # ---- Senate
     inc = {_senate_race_id(r["label"]): r for r in raw["senate_incumbents"].iter_rows(named=True)}
@@ -398,7 +418,7 @@ def to_objects(raw: dict[str, pl.DataFrame]) -> dict[str, pl.DataFrame]:
         races.append({"race_id": rid, "chamber": "senate", "state": st, "district": None,
                       "incumbent_party": "D" if ip == "I" else ip, "open_seat": _is_open(i.get("status", "")),
                       "pres24_margin": m, "rating": rating, "special": rid.endswith("-S")})
-        add_cands(rid, i.get("candidates", ""), i.get("senator"), True)
+        add_cands(rid, i.get("candidates", ""), [i.get("senator"), rec["incumbent"]], True)
 
     # ---- Governor
     ginc = {STATES[r["state"]]: r for r in raw["governor_incumbents"].iter_rows(named=True)}
@@ -416,7 +436,7 @@ def to_objects(raw: dict[str, pl.DataFrame]) -> dict[str, pl.DataFrame]:
         races.append({"race_id": rid, "chamber": "governor", "state": st, "district": None,
                       "incumbent_party": ip, "open_seat": _is_open(i.get("status", "")),
                       "pres24_margin": m, "rating": rating, "special": False})
-        add_cands(rid, i.get("candidates", ""), i.get("governor"), True)
+        add_cands(rid, i.get("candidates", ""), [i.get("governor"), rec["incumbent"]], True)
 
     # ---- House
     hr = {_district_id(r["label"]): r for r in raw["house_ratings"].iter_rows(named=True)}
@@ -451,7 +471,7 @@ def to_objects(raw: dict[str, pl.DataFrame]) -> dict[str, pl.DataFrame]:
                       "pres24_margin": m, "rating": rating, "special": False})
         districts.append({"district_id": did, "state": st, "pres24_margin": m})
         if ms:
-            add_cands(rid, ms[0]["candidates"], running[0]["member"] if running else None, False)
+            add_cands(rid, ms[0]["candidates"], [x["member"] for x in running], False)
 
     race_df = pl.DataFrame(races, schema={
         "race_id": pl.Utf8, "chamber": pl.Utf8, "state": pl.Utf8, "district": pl.Utf8,

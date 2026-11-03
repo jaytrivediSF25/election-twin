@@ -100,8 +100,8 @@ def verify_lock():
 @app.command("live")
 def live_cmd(interval: int = 90, once: bool = False, states: str = "nc,fl,ga"):
     """Poll NC/FL/GA feeds -> VoteBatches -> live predictions."""
-    con = _con()
     while True:
+        con = _con()  # reopened each cycle so the dashboard can read between cycles
         for st in states.split(","):
             try:
                 df = importlib.import_module(f"ingest.live_{st}").poll()
@@ -116,6 +116,7 @@ def live_cmd(interval: int = 90, once: bool = False, states: str = "nc,fl,ga"):
             _show(preds, top=15)
         except Exception as e:
             typer.echo(f"live model failed: {type(e).__name__}: {e}")
+        con.close()
         if once:
             return
         time.sleep(interval)
