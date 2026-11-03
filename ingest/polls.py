@@ -71,6 +71,8 @@ AT_LARGE = {"AK", "DE", "ND", "SD", "VT", "WY"}
 # Independent treated as the D side (README: main non-R independent backed by / caucusing w/ Dems)
 IND_D_SIDE = {"SEN-NE": "osborn", "SEN-MT": "bodnar", "SEN-SD": "bengs", "SEN-ID": "achilles"}
 POP_RANK = {"lv": 0, "rv": 1, "v": 2, "a": 3}
+# source misspellings / names missing from FPO + Wikipedia candidate lists
+PARTY_OVERRIDES = {"maura healy": "DEM", "maura healey": "DEM"}
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -303,7 +305,7 @@ class _Parties:
 
     def __init__(self, raw: dict[str, pl.DataFrame]):
         self.race_last: dict[str, dict[str, str]] = {}
-        self.full: dict[str, str] = {}
+        self.full: dict[str, str] = dict(PARTY_OVERRIDES)
         self.last: dict[str, set[str]] = {}
         fpo = raw.get("fpo_averages")
         if fpo is not None and fpo.height:
@@ -358,7 +360,8 @@ def _votehub_polls(raw: dict[str, pl.DataFrame], parties: _Parties) -> list[dict
         if rid in IND_D_SIDE:
             ds = [c for c in cands if _last(c[0]) == IND_D_SIDE[rid]]
         else:
-            ds = sorted([c for c in cands if c[1] == "DEM"], key=lambda c: -c[2])
+            # strongest of Dem / independent (README: main non-R independent counts as D side)
+            ds = sorted([c for c in cands if c[1] in ("DEM", "IND")], key=lambda c: -c[2])
         return (ds[0] if ds else None), (reps[0] if reps else None)
 
     pair_counts: dict[str, dict[tuple, int]] = {}
@@ -479,7 +482,7 @@ def _averages(raw: dict[str, pl.DataFrame], polls: pl.DataFrame) -> list[dict]:
                 ds = last.filter(pl.col("candidate_name").map_elements(_last, return_dtype=pl.Utf8)
                                  == IND_D_SIDE[rid])
             else:
-                ds = last.filter(pl.col("party") == "DEM").sort("estimate", descending=True)
+                ds = last.filter(pl.col("party").is_in(["DEM", "IND"])).sort("estimate", descending=True)
             if ds.is_empty() or reps.is_empty():
                 continue
             out.append({"race_id": rid, "source": "fiftyplusone",

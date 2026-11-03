@@ -88,8 +88,7 @@ def parse(data: bytes, ts: datetime, source: str = SOURCE, include_zero: bool = 
 def poll(url: str = URL_2026, include_zero: bool = False) -> pl.DataFrame:
     data, lm = C.fetch_bytes(url, CACHE / Path(url).name)
     ts = C.parse_http_date(lm) or C.utcnow()
-    return parse(data, ts, include_zero=include_zero,
-                 races=None if url != URL_2026 else None)
+    return parse(data, ts, include_zero=include_zero)
 
 
 def load_2024(refresh: bool = False) -> pl.DataFrame:

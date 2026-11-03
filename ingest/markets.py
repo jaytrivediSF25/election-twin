@@ -14,7 +14,10 @@ slugs; oddities live in the explicit override dicts below.
 from __future__ import annotations
 
 import json
+import logging
+import random
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +33,9 @@ SOURCES = {
     "kalshi_markets": f"{KALSHI}/events?series_ticker=<series>&status=open&with_nested_markets=true",
     "polymarket_markets": f"{GAMMA}/events?tag_slug=midterms&closed=false",
 }
+KALSHI_WORKERS = 4      # Kalshi basic tier rate-limits reads; keep this small
+KALSHI_PACE = 0.1       # seconds between page requests per worker
+log = logging.getLogger(__name__)
 RAW_DIR = Path(__file__).resolve().parent.parent / "data" / "raw" / "markets"
 
 STATES = {
@@ -50,6 +56,13 @@ POSTAL = set(STATES.values())
 # 2026 Senate specials (Vance / Rubio seats). Polymarket slugs don't flag them.
 SPECIAL_SENATE = {"OH", "FL"}
 
+# Event-level overrides (Kalshi tickers that lie about state/year). Verified
+# against each market's rules_primary ("pursuant to the 2026 election").
+EVENT_OVERRIDES: dict[str, str] = {
+    "kalshi:SENATELA-26": "SEN-KY",      # titled "Kentucky Senate winner?" (Barr v Booker)
+    "kalshi:GOVPARTYNH-28": "GOV-NH",    # 2026 election despite -28
+    "kalshi:GOVPARTYKS-27": "GOV-KS",    # 2026 election despite -27
+}
 # Market-level overrides: market_id -> yes_means ("D" | "R") or None to drop.
 # README: an independent the Dems back is the "D" side (NE: Osborn).
 MARKET_OVERRIDES: dict[str, str | None] = {
@@ -58,14 +71,17 @@ MARKET_OVERRIDES: dict[str, str | None] = {
     "polymarket:634893": "D",           # NE: "Will an independent win" == Osborn
     "polymarket:634891": None,          # NE: "Will the Democrats win" (not the D side)
 }
-# Races where the non-R side is split / ambiguous: keep only YES=R markets so
-# p_dem == P(not R). MT: Bodnar (I) vs Bankhead (D).
-R_ONLY_RACES = {"SEN-MT"}
-# Per-candidate markets with no party in the question (Polymarket): name -> party.
-CANDIDATE_PARTY = {
-    "dan sullivan": "R", "mary peltola": "D",                  # AK Senate
-    "jonathan kreiss-tomkins": "D", "bernadette wilson": "R",  # AK Governor
-    "xavier becerra": "D", "steve hilton": "R",                # CA Governor
+# Races whose non-major side is split or an independent is competitive: keep
+# only markets whose YES is this party, so p_dem is unambiguous.
+#   SEN-MT: R vs Bodnar (I) vs Bankhead (D)      -> p_dem = P(not R)
+#   HOUSE-AK-AL: R vs Bill Hill (I) vs Hafner (D) -> p_dem = P(not R)
+#   HOUSE-CA-06: Pan (D) vs Kiley (I, ex-R)       -> p_dem = P(D)
+RACE_KEEP_ONLY: dict[str, str] = {"SEN-MT": "R", "HOUSE-AK-AL": "R", "HOUSE-CA-06": "D"}
+# Per-candidate Polymarket markets with no party in the question: (race, name) -> party.
+CANDIDATE_PARTY: dict[tuple[str, str], str] = {
+    ("SEN-AK", "dan sullivan"): "R", ("SEN-AK", "mary peltola"): "D",
+    ("GOV-AK", "jonathan kreiss-tomkins"): "D", ("GOV-AK", "bernadette wilson"): "R",
+    ("GOV-CA", "xavier becerra"): "D", ("GOV-CA", "steve hilton"): "R",
 }
 
 _K_RACE = [
@@ -119,11 +135,26 @@ def _gov(st: str | None) -> str | None:
     return f"GOV-{st}" if st in POSTAL else None
 
 
-def kalshi_race_id(event_ticker: str) -> str | None:
+def _title_state(title: str | None) -> str | None:
+    t = (title or "").lower()
+    for name in sorted(STATES, key=len, reverse=True):  # "west virginia" before "virginia"
+        if re.search(rf"\b{name}\b", t):
+            return STATES[name]
+    return None
+
+
+def kalshi_race_id(event_ticker: str, event_title: str | None = None) -> str | None:
+    """Race from a Kalshi event ticker; if the title names a different state, drop it."""
+    if f"kalshi:{event_ticker}" in EVENT_OVERRIDES:
+        return EVENT_OVERRIDES[f"kalshi:{event_ticker}"]
     for rx, fn in _K_RACE:
         m = rx.match(event_ticker)
         if m:
-            return fn(m)
+            rid = fn(m)
+            ts = _title_state(event_title)
+            if rid and ts and not rid.startswith("CONTROL") and rid.split("-")[1] != ts:
+                return None  # ticker/title disagree: needs an explicit override
+            return rid
     return None
 
 
@@ -134,6 +165,8 @@ def kalshi_yes_means(ticker: str) -> str | None:
 
 
 def polymarket_race_id(slug: str) -> str | None:
+    if f"polymarket:{slug}" in EVENT_OVERRIDES:
+        return EVENT_OVERRIDES[f"polymarket:{slug}"]
     if _P_SKIP.search(slug):
         return None
     for rx, fn in _P_RACE:
@@ -143,15 +176,16 @@ def polymarket_race_id(slug: str) -> str | None:
     return None
 
 
-def polymarket_yes_means(market_id: str, question: str, group_title: str = "") -> str | None:
+def polymarket_yes_means(market_id: str, question: str, group_title: str = "",
+                         race_id: str | None = None) -> str | None:
     if f"polymarket:{market_id}" in MARKET_OVERRIDES:
         return MARKET_OVERRIDES[f"polymarket:{market_id}"]
     q = question.lower()
     has_d, has_r = bool(re.search(r"\bdemocrat", q)), bool(re.search(r"\brepublican", q))
     if has_d != has_r:
         return "D" if has_d else "R"
-    for name, party in CANDIDATE_PARTY.items():
-        if re.search(rf"\bwill {re.escape(name)} win\b", q):
+    for (rid, name), party in CANDIDATE_PARTY.items():
+        if rid == race_id and re.search(rf"\bwill {re.escape(name)} win\b", q):
             return party
     g = re.search(r"\(([DR])\)\s*$", group_title.strip())  # "Katie Hobbs (D)"
     return g[1] if g else None
@@ -184,16 +218,39 @@ def _client() -> httpx.Client:
     return httpx.Client(timeout=30, headers={"User-Agent": "election-twin/0.1 (read-only)"})
 
 
-def _get(c: httpx.Client, url: str, params: dict | None = None, tries: int = 4) -> Any:
+def _retry_after(r: httpx.Response) -> float | None:
+    try:
+        return min(float(r.headers.get("Retry-After", "")), 30.0)
+    except ValueError:
+        return None
+
+
+def _request(c: httpx.Client, method: str, url: str, tries: int = 6, **kw) -> httpx.Response:
+    """GET/POST with exponential backoff on 429/5xx/transport errors; honours Retry-After."""
+    delay = 0.5
     for i in range(tries):
-        r = c.get(url, params=params)
-        if r.status_code == 429 or r.status_code >= 500:
-            import time
-            time.sleep(1.5 * (i + 1))
-            continue
-        r.raise_for_status()
-        return r.json()
-    r.raise_for_status()
+        try:
+            r = c.request(method, url, **kw)
+        except httpx.TransportError as e:
+            if i == tries - 1:
+                raise
+            log.warning("markets: %s %s -> %r; retry in %.1fs", method, url, e, delay)
+        else:
+            if r.status_code != 429 and r.status_code < 500:
+                r.raise_for_status()
+                return r
+            if i == tries - 1:
+                r.raise_for_status()
+            wait = _retry_after(r) or delay
+            log.warning("markets: %s %s -> %s; retry in %.1fs", method, url, r.status_code, wait)
+            delay = wait
+        time.sleep(delay + random.uniform(0, 0.25))
+        delay = min(delay * 2, 20.0)
+    raise RuntimeError("unreachable")
+
+
+def _get(c: httpx.Client, url: str, params: dict | None = None, tries: int = 6) -> Any:
+    return _request(c, "GET", url, tries=tries, params=params).json()
 
 
 # ---------------------------------------------------------------- Kalshi
@@ -217,19 +274,31 @@ def _fetch_kalshi(c: httpx.Client) -> pl.DataFrame:
         rows, cur = [], None
         with _client() as cc:
             while True:
+                time.sleep(KALSHI_PACE)
                 p = {"series_ticker": st, "status": "open", "with_nested_markets": "true", "limit": 200}
                 if cur:
                     p["cursor"] = cur
                 d = _get(cc, f"{KALSHI}/events", p)
                 for e in d.get("events", []):
-                    if kalshi_race_id(e["event_ticker"]) or re.search(r"-(26|2026)", e["event_ticker"]):
+                    if f"kalshi:{e['event_ticker']}" in EVENT_OVERRIDES or re.search(r"-(26|2026)", e["event_ticker"]):
                         rows += [_kalshi_rows(m, e, ts) for m in e.get("markets", [])]
                 cur = d.get("cursor")
                 if not cur or not d.get("events"):
                     return rows
 
-    with ThreadPoolExecutor(8) as ex:
-        rows = [r for rs in ex.map(one, series) for r in rs]
+    def safe(st: str) -> list[dict]:
+        try:
+            return one(st)
+        except Exception as e:  # one bad series must not sink the whole fetch
+            log.error("markets: kalshi series %s skipped: %r", st, e)
+            failed.append(st)
+            return []
+
+    failed: list[str] = []
+    with ThreadPoolExecutor(KALSHI_WORKERS) as ex:
+        rows = [r for rs in ex.map(safe, series) for r in rs]
+    if failed:
+        log.error("markets: %d kalshi series failed: %s", len(failed), failed)
     return pl.DataFrame(rows, schema=_RAW_SCHEMA)
 
 
@@ -284,8 +353,7 @@ def _clob_mids(c: httpx.Client, tokens: list[str]) -> dict[str, float]:
     out: dict[str, float] = {}
     for i in range(0, len(tokens), 400):
         try:
-            r = c.post(f"{CLOB}/midpoints", json=[{"token_id": t} for t in tokens[i:i + 400]])
-            r.raise_for_status()
+            r = _request(c, "POST", f"{CLOB}/midpoints", tries=3, json=[{"token_id": t} for t in tokens[i:i + 400]])
             out.update({k: float(v) for k, v in r.json().items() if v is not None})
         except (httpx.HTTPError, ValueError):
             pass  # fall back to Gamma bestBid/bestAsk
@@ -327,11 +395,12 @@ def _map(df: pl.DataFrame) -> pl.DataFrame:
     race, yes = [], []
     for r in df.iter_rows(named=True):
         if r["venue"] == "kalshi":
-            rid, ym = kalshi_race_id(r["event_id"]), kalshi_yes_means(r["native_id"])
+            rid = kalshi_race_id(r["event_id"], r["event_title"])
+            ym = kalshi_yes_means(r["native_id"])
         else:
             rid = polymarket_race_id(r["event_id"])
-            ym = polymarket_yes_means(r["native_id"], r["title"] or "", r["outcome"] or "")
-        if rid in R_ONLY_RACES and ym != "R":
+            ym = polymarket_yes_means(r["native_id"], r["title"] or "", r["outcome"] or "", rid)
+        if rid in RACE_KEEP_ONLY and ym != RACE_KEEP_ONLY[rid]:
             ym = None
         race.append(rid)
         yes.append(ym if rid else None)
@@ -378,7 +447,8 @@ def unmapped(raw: dict[str, pl.DataFrame]) -> pl.DataFrame:
     """Race-winner-looking markets dropped for lack of a race_id or party."""
     m = _map(_raw_all(raw))
     looks = (
-        ((pl.col("venue") == "kalshi") & pl.col("event_id").str.contains(r"-(26|2026|26NOV)$"))
+        ((pl.col("venue") == "kalshi") & pl.col("event_id").str.contains(r"-(26|2026|26NOV|27|28)$")
+         & ~pl.col("event_title").str.contains(r"\(20(27|28)\)"))
         | ((pl.col("venue") == "polymarket") & pl.col("event_id").str.contains(_P_WINNER.pattern)
            & ~pl.col("event_id").str.contains(_P_NOT_RACE))
     )
