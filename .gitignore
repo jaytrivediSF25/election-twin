@@ -1,0 +1,4 @@
+data/twin.duckdb*
+data/raw/
+.venv/
+__pycache__/

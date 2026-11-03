@@ -1,0 +1,167 @@
+# Ontology Metadata: object types, link types, action types.
+# Margins are always D minus R, in points (D+3 = 3.0, R+3 = -3.0).
+
+object_types:
+  Race:
+    pk: [race_id]                 # e.g. SEN-GA, HOUSE-PA-07, GOV-AZ
+    properties:
+      race_id: VARCHAR
+      chamber: VARCHAR            # senate | house | governor
+      state: VARCHAR
+      district: VARCHAR           # null for statewide
+      incumbent_party: VARCHAR    # D | R | null (open seat w/o prior holder)
+      open_seat: BOOLEAN
+      pres24_margin: DOUBLE
+      rating: VARCHAR             # Safe D ... Safe R
+      special: BOOLEAN
+  Candidate:
+    pk: [candidate_id]
+    properties:
+      candidate_id: VARCHAR
+      race_id: VARCHAR
+      name: VARCHAR
+      party: VARCHAR
+      incumbent: BOOLEAN
+  District:
+    pk: [district_id]
+    properties:
+      district_id: VARCHAR        # PA-07
+      state: VARCHAR
+      pres24_margin: DOUBLE
+  County:
+    pk: [fips]
+    properties:
+      fips: VARCHAR
+      state: VARCHAR
+      name: VARCHAR
+      pres24_dem: BIGINT
+      pres24_rep: BIGINT
+      pres24_total: BIGINT
+      pres24_margin: DOUBLE
+  CountyDistrict:                 # join table backing County -> District
+    pk: [fips, district_id]
+    properties:
+      fips: VARCHAR
+      district_id: VARCHAR
+      weight: DOUBLE              # share of county population in district
+  Pollster:
+    pk: [pollster_id]
+    properties:
+      pollster_id: VARCHAR
+      name: VARCHAR
+      house_effect: DOUBLE
+  Poll:
+    pk: [poll_id]
+    properties:
+      poll_id: VARCHAR
+      race_id: VARCHAR            # GENERIC for generic ballot
+      pollster_id: VARCHAR
+      end_date: DATE
+      sample_size: INTEGER
+      population: VARCHAR         # lv | rv | a
+      dem_pct: DOUBLE
+      rep_pct: DOUBLE
+      margin: DOUBLE
+      weight: DOUBLE
+      excluded: BOOLEAN
+      source: VARCHAR
+  PollAverage:
+    pk: [race_id, source]
+    properties:
+      race_id: VARCHAR
+      source: VARCHAR
+      margin: DOUBLE
+      n_polls: INTEGER
+      as_of: DATE
+  Market:
+    pk: [market_id]
+    properties:
+      market_id: VARCHAR          # venue:native_id
+      venue: VARCHAR              # kalshi | polymarket
+      title: VARCHAR
+      race_id: VARCHAR            # or CONTROL-HOUSE / CONTROL-SENATE
+      yes_means: VARCHAR          # D | R
+  MarketSnapshot:
+    pk: [market_id, ts]
+    properties:
+      market_id: VARCHAR
+      ts: TIMESTAMP
+      p_yes: DOUBLE
+      p_dem: DOUBLE
+      tag: VARCHAR                # e.g. lock
+  VoteBatch:
+    pk: [batch_id]
+    properties:
+      batch_id: VARCHAR
+      race_id: VARCHAR
+      fips: VARCHAR
+      vote_type: VARCHAR          # total | election_day | early | mail | provisional
+      dem: BIGINT
+      rep: BIGINT
+      other: BIGINT
+      ts: TIMESTAMP
+      source: VARCHAR
+  Prediction:
+    pk: [race_id, model_version, ts]
+    properties:
+      race_id: VARCHAR            # incl. CONTROL-HOUSE / CONTROL-SENATE
+      model_version: VARCHAR
+      ts: TIMESTAMP
+      scenario_id: VARCHAR
+      p_dem: DOUBLE
+      mean_margin: DOUBLE
+      p10: DOUBLE
+      p90: DOUBLE
+      n_sims: INTEGER
+      inputs_hash: VARCHAR
+  Scenario:
+    pk: [scenario_id]
+    properties:
+      scenario_id: VARCHAR
+      description: VARCHAR
+      overrides: JSON
+      created_at: TIMESTAMP
+  Outcome:
+    pk: [race_id]
+    properties:
+      race_id: VARCHAR
+      winner_party: VARCHAR
+      margin: DOUBLE
+      certified_at: TIMESTAMP
+
+link_types:
+  poll_race:        {from: Poll, to: Race, via: {Poll: race_id, Race: race_id}}
+  pollster_poll:    {from: Pollster, to: Poll, via: {Pollster: pollster_id, Poll: pollster_id}}
+  candidate_race:   {from: Candidate, to: Race, via: {Candidate: race_id, Race: race_id}}
+  market_race:      {from: Market, to: Race, via: {Market: race_id, Race: race_id}}
+  snapshot_market:  {from: MarketSnapshot, to: Market, via: {MarketSnapshot: market_id, Market: market_id}}
+  county_district:  {from: County, to: District, join: CountyDistrict, via: {County: fips, District: district_id}}
+  votebatch_county: {from: VoteBatch, to: County, via: {VoteBatch: fips, County: fips}}
+  votebatch_race:   {from: VoteBatch, to: Race, via: {VoteBatch: race_id, Race: race_id}}
+  prediction_race:  {from: Prediction, to: Race, via: {Prediction: race_id, Race: race_id}}
+  prediction_scenario: {from: Prediction, to: Scenario, via: {Prediction: scenario_id, Scenario: scenario_id}}
+  outcome_race:     {from: Outcome, to: Race, via: {Outcome: race_id, Race: race_id}}
+  average_race:     {from: PollAverage, to: Race, via: {PollAverage: race_id, Race: race_id}}
+
+action_types:
+  override_poll:
+    object_type: Poll
+    editable: [excluded, weight]
+  map_market:
+    object_type: Market
+    editable: [race_id, yes_means]
+  set_rating:
+    object_type: Race
+    editable: [rating]
+  record_vote_batch:
+    object_type: VoteBatch
+    creates: true
+  create_scenario:
+    object_type: Scenario
+    creates: true
+  certify_outcome:
+    object_type: Outcome
+    creates: true
+  lock_prediction:
+    object_type: Prediction
+    creates: true
