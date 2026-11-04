@@ -2,3 +2,6 @@ data/twin.duckdb*
 data/raw/
 .venv/
 __pycache__/
+.pytest_cache/
+data/staged/
+.DS_Store
