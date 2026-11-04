@@ -58,18 +58,38 @@ def forecast(version: str = "pregame-v1", n_sims: int = 40_000):
 
 
 @app.command()
-def lock(n_sims: int = 40_000, push: bool = True):
+def lock(n_sims: int = 40_000, push: bool = True,
+         from_run: bool = typer.Option(False, help="re-run the latest stored pregame-v1 run (same inputs, params, "
+                                                   "seed) instead of fresh inputs; reuse its pre-run market snapshot")):
     """Final pregame run -> LOCKED predictions, market snapshot, hash, git commit+push."""
     con = _con()
-    inputs, meta = pregame.build_inputs(con)
-    preds, _, run_id = pregame.run(con, LOCKED, inputs, meta, pregame.SimParams(n_sims=n_sims))
-    try:
-        snap = importlib.import_module("ingest.markets").snapshot("lock")
-        funnel.write_batch(con, "MarketSnapshot", snap, source="lock")
-        typer.echo(f"market snapshot: {snap.height} rows")
-    except Exception as e:
-        typer.echo(f"WARNING market snapshot failed: {e}")
+    source = None
+    if from_run:
+        src_id, inputs, meta, params = pregame.latest_run(con, "pregame-v1")
+        src_ts, src_out = oms.one(con, "SELECT ts, outputs_hash FROM model_runs WHERE run_id = ?", [src_id])
+        sim = pregame.SimParams(**{k: v for k, v in params.items() if k in pregame.SimParams.__dataclass_fields__})
+        source = {"run_id": src_id, "ts": src_ts, "outputs_hash": src_out}
+    else:
+        inputs, meta = pregame.build_inputs(con)
+        sim = pregame.SimParams(n_sims=n_sims)
+    preds, _, run_id = pregame.run(con, LOCKED, inputs, meta, sim)
+    if from_run:
+        # Benchmark = the last market pull taken before the source run, not prices that already see returns.
+        snap = pl.from_arrow(con.execute(
+            "SELECT * FROM merged_MarketSnapshot WHERE ts = (SELECT max(ts) FROM merged_MarketSnapshot WHERE ts <= ?)",
+            [source["ts"]]).to_arrow_table())
+        funnel.write_batch(con, "MarketSnapshot", snap.with_columns(pl.lit("lock").alias("tag")), source="lock")
+        typer.echo(f"market snapshot: {snap.height} rows from {snap['ts'].max()}")
+    else:
+        try:
+            snap = importlib.import_module("ingest.markets").snapshot("lock")
+            funnel.write_batch(con, "MarketSnapshot", snap, source="lock")
+            typer.echo(f"market snapshot: {snap.height} rows")
+        except Exception as e:
+            typer.echo(f"WARNING market snapshot failed: {e}")
     in_hash, out_hash = oms.one(con, "SELECT inputs_hash, outputs_hash FROM model_runs WHERE run_id = ?", [run_id])
+    if source and source["outputs_hash"] != out_hash:
+        raise typer.Exit(f"rerun outputs {out_hash} != source run {source['outputs_hash']}; not locking")
     funnel.lock_version(con, LOCKED, in_hash, out_hash)
 
     LOCK_DIR.mkdir(exist_ok=True)
@@ -77,7 +97,7 @@ def lock(n_sims: int = 40_000, push: bool = True):
     inputs.sort("race_id").write_csv(LOCK_DIR / f"{LOCKED}.inputs.csv")
     (LOCK_DIR / "LOCK.json").write_text(json.dumps({
         "model_version": LOCKED, "run_id": run_id, "inputs_hash": in_hash, "outputs_hash": out_hash,
-        "meta": meta}, indent=2, default=str))
+        "locked_at": pregame.utcnow(), "rerun_of": source, "meta": meta}, indent=2, default=str))
     _show(preds)
     typer.echo(f"LOCKED {run_id}\n inputs_hash={in_hash}\n outputs_hash={out_hash}")
     subprocess.run(["git", "add", "-A"], cwd=ROOT, check=True)

@@ -1,0 +1,19 @@
+{
+  "model_version": "pregame-v1-LOCKED",
+  "run_id": "pregame-v1-LOCKED@2026-11-04T00:17:48.398390",
+  "inputs_hash": "122071c801a18c0d42161a535214e6694c893e7ee1500abccaf17afdf65ee33f",
+  "outputs_hash": "740f2cafe37b45fe6e6d698538860f58b3609c211c986a9bfd4bd153b6acd16e",
+  "locked_at": "2026-11-04 00:17:48.566573",
+  "rerun_of": {
+    "run_id": "pregame-v1@2026-11-03T18:52:55.311246",
+    "ts": "2026-11-03 18:52:55.311246",
+    "outputs_hash": "740f2cafe37b45fe6e6d698538860f58b3609c211c986a9bfd4bd153b6acd16e"
+  },
+  "meta": {
+    "generic": 8.357431327799372,
+    "n_generic_polls": 147,
+    "swing": 9.837431327799372,
+    "senate_holdover_d": 34,
+    "as_of": "2026-11-03"
+  }
+}
